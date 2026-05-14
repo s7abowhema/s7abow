@@ -1,64 +1,52 @@
-const express = require('express')
-const multer = require('multer')
-const path = require('path')
-const fs = require('fs')
-const cors = require('cors')
+const express = require('express');
+const multer = require('multer');
+const axios = require('axios');
+const FormData = require('form-data');
+const path = require('path');
+const cors = require('cors');
 
-const app = express()
+const app = express();
+app.use(cors());
 
-const PORT = process.env.PORT || 3000
+// تخزين في الذاكرة لتجنب قيود Vercel على القرص
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
-app.use(cors())
-app.use(express.static(__dirname))
-
-// إنشاء مجلد uploads
-if (!fs.existsSync('./uploads')) {
-    fs.mkdirSync('./uploads')
-}
-
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')))
-
-// توليد اسم قصير مثل Catbox
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'uploads/')
-    },
-    filename: (req, file, cb) => {
-
-        const shortId =
-            Math.random().toString(36).substring(2, 8)
-
-        cb(null, shortId + path.extname(file.originalname))
-    }
-})
-
-const upload = multer({ storage })
-
-// API رفع الملفات
-app.post('/api/upload', upload.single('file'), (req, res) => {
-
+app.post('/api/upload', upload.single('file'), async (req, res) => {
     if (!req.file) {
-        return res.json({
-            status: false,
-            message: 'No file uploaded'
-        })
+        return res.json({ status: false, message: 'No file uploaded' });
     }
 
-    const fileUrl =
-        `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
+    try {
+        const formData = new FormData();
+        formData.append('reqtype', 'fileupload');
+        formData.append('fileToUpload', req.file.buffer, {
+            filename: req.file.originalname,
+            contentType: req.file.mimetype,
+        });
 
-    res.json({
-        status: true,
-        creator: "s7abow",
-        url: fileUrl
-    })
-})
+        // محاولة الرفع لـ Catbox
+        const response = await axios.post('https://catbox.moe/user/api.php', formData, {
+            headers: formData.getHeaders(),
+            timeout: 10000 // مهلة 10 ثواني
+        });
 
-// الصفحة الرئيسية
+        res.json({
+            status: true,
+            creator: "s7abow",
+            url: response.data 
+        });
+
+    } catch (error) {
+        res.status(500).json({ 
+            status: false, 
+            message: 'الخدمة قد تكون متوقفة حالياً، جرب لاحقاً أو اخبرني لتغيير السيرفر.' 
+        });
+    }
+});
+
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'))
-})
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
 
-app.listen(PORT, () => {
-    console.log(`s7abow running on port ${PORT}`)
-})
+module.exports = app;
