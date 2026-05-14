@@ -8,39 +8,51 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-// تخزين في الذاكرة لتجنب قيود Vercel على القرص
+// إعداد multer لاستلام أي نوع ملف في الذاكرة
 const storage = multer.memoryStorage();
-const upload = multer({ storage });
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 100 * 1024 * 1024 } // حد أقصى 100 ميجا للملف
+});
 
 app.post('/api/upload', upload.single('file'), async (req, res) => {
     if (!req.file) {
-        return res.json({ status: false, message: 'No file uploaded' });
+        return res.json({ status: false, message: 'لم يتم اختيار ملف' });
     }
 
     try {
         const formData = new FormData();
-        formData.append('reqtype', 'fileupload');
-        formData.append('fileToUpload', req.file.buffer, {
+        
+        // إرسال الملف الخام مع الحفاظ على اسمه ونوعه الأصلي
+        formData.append('files[]', req.file.buffer, {
             filename: req.file.originalname,
             contentType: req.file.mimetype,
         });
 
-        // محاولة الرفع لـ Catbox
-        const response = await axios.post('https://catbox.moe/user/api.php', formData, {
+        // الرفع إلى سيرفر Quax (يدعم الصور والفيديو والملفات المضغوطة وغيرها)
+        const response = await axios.post('https://qu.ax/upload.php', formData, {
             headers: formData.getHeaders(),
-            timeout: 10000 // مهلة 10 ثواني
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity
         });
 
-        res.json({
-            status: true,
-            creator: "s7abow",
-            url: response.data 
-        });
+        if (response.data && response.data.files && response.data.files[0]) {
+            res.json({
+                status: true,
+                creator: "s7abow",
+                url: response.data.files[0].url,
+                name: response.data.files[0].name,
+                type: req.file.mimetype // إرجاع نوع الملف للتأكد
+            });
+        } else {
+            throw new Error('استجابة غير صالحة من السيرفر');
+        }
 
     } catch (error) {
+        console.error('Upload Error:', error.message);
         res.status(500).json({ 
             status: false, 
-            message: 'الخدمة قد تكون متوقفة حالياً، جرب لاحقاً أو اخبرني لتغيير السيرفر.' 
+            message: 'فشل الرفع، السيرفر قد يكون مضغوطاً حالياً.' 
         });
     }
 });
